@@ -1,0 +1,40 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Assistant - Welcome</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <main class="container">
+        <h1>Welcome to Form Assistant</h1>
+        <p class="instruction" role="alert" aria-live="polite">Press any key or click to begin</p>
+    </main>
+
+    <!-- Listening Indicator -->
+    <div id="listening-indicator" class="listening-indicator">
+        <div class="listening-content">
+            <div class="microphone-icon">🎤</div>
+            <div class="listening-title">Listening...</div>
+            <div class="listening-animation">
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+            </div>
+            <div class="listening-timer">
+                <span id="timer-display">10</span>s
+            </div>
+            <div class="listening-text">Speak clearly and naturally</div>
+        </div>
+    </div>
+
+    <script src="../js/state.js"></script>
+    <script src="../js/voice.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/main.js"></script>
+</body>
+</html>

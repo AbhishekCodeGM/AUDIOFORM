@@ -1,0 +1,379 @@
+<!-- form-fill.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Assistant - Fill Form</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <main class="container">
+        <h1 id="form-title"></h1>
+        <div id="question-container" class="question-container">
+            <label id="question-label" for="answer-input"></label>
+            <div class="input-group">
+                <input type="text" id="answer-input" name="answer" autocomplete="off">
+                <button id="voice-btn" class="btn-voice" title="Speak answer">🎤</button>
+            </div>
+            <button id="next-btn" class="btn-primary">Next</button>
+        </div>
+        <div id="summary-container" class="summary-container" style="display: none;">
+            <h2>Form Summary</h2>
+            <div id="answers-list"></div>
+            <button id="submit-btn" class="btn-primary">Submit</button>
+        </div>
+    </main>
+
+    <!-- Listening Indicator -->
+    <div id="listening-indicator" class="listening-indicator">
+        <div class="listening-content">
+            <div class="microphone-icon">🎤</div>
+            <div class="listening-title">Listening...</div>
+            <div class="listening-animation">
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+                <div class="listening-bar"></div>
+            </div>
+            <div class="listening-timer">
+                <span id="timer-display">10</span>s
+            </div>
+            <div class="listening-text">Speak your answer clearly</div>
+        </div>
+    </div>
+    <script src="../js/state.js"></script>
+    <script src="../js/voice.js"></script>
+    <script src="../js/api.js"></script>
+    <script src="../js/forms.js"></script>
+    <script>
+        const selectedFormKey = State.getSelectedForm();
+        const language = State.getLanguage();
+        const accessibilityMode = State.getAccessibilityMode();
+        const formFields = Forms[selectedFormKey];
+        let currentFieldIndex = 0;
+        let answers = State.getFormAnswers() || {};
+
+        // Ensure Voice has the correct language set
+        Voice.setLanguage(language);
+        console.log('[Form Fill] Voice language synchronized to:', language);
+
+        // Get title and fields in correct language
+        document.getElementById('form-title').textContent = Forms.getTitle(selectedFormKey);
+        const fields = Forms.getFields(selectedFormKey);
+
+        async function loadQuestion() {
+            if (currentFieldIndex >= fields.length) {
+                showSummary();
+                return;
+            }
+
+            const field = fields[currentFieldIndex];
+            const question = await API.askQuestion(field, language);
+            
+            document.getElementById('question-label').textContent = question;
+            document.getElementById('answer-input').value = answers[field] || '';
+            document.getElementById('answer-input').focus();
+
+            if (accessibilityMode === 'voice') {
+                // Announce question and wait for user to be ready
+                await Voice.speak(question);
+                // Pause before listening - give user time to prepare
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        function showSummary() {
+            document.getElementById('question-container').style.display = 'none';
+            document.getElementById('summary-container').style.display = 'block';
+
+            const answersList = document.getElementById('answers-list');
+            answersList.innerHTML = '';
+
+            fields.forEach(field => {
+                const div = document.createElement('div');
+                div.className = 'answer-item';
+                div.innerHTML = `<strong>${field}:</strong> ${answers[field] || 'N/A'}`;
+                answersList.appendChild(div);
+            });
+
+            if (accessibilityMode === 'voice') {
+                // Voice summary review
+                (async () => {
+                    let summaryTextEN = 'Here is your form summary. ' + fields.map(field => `${field}: ${answers[field] || 'Not provided'}`).join('. ') + '. Say yes to submit or no to edit.';
+                    let summaryTextHI = 'यह आपके फॉर्म का सारांश है। ' + fields.map(field => `${field}: ${answers[field] || 'प्रदान नहीं किया गया'}`).join('. ') + '. सबमिट करने के लिए हाँ कहें या संपादित करने के लिए नहीं कहें।';
+                    const summaryText = language === 'Hindi' ? summaryTextHI : summaryTextEN;
+                    
+                    // Announce summary and wait for user to be ready
+                    console.log('[Summary] Summary text length:', summaryText.length);
+                    console.log('[Summary] Speaking summary...');
+                    console.log('[Summary] Summary:', summaryText.substring(0, 100) + '...');
+                    
+                    await Voice.speak(summaryText);
+                    console.log('[Summary] Summary speech completed');
+                    
+                    // Calculate dynamic pause based on summary length
+                    // Estimate ~50ms per character for speech
+                    const estimatedSpeechTime = summaryText.length * 50;
+                    const pauseTime = Math.max(2000, estimatedSpeechTime + 500); // Min 2 seconds, Max = speech time + 500ms buffer
+                    console.log(`[Summary] Waiting ${pauseTime}ms before listening (speech estimated: ${estimatedSpeechTime}ms)`);
+                    
+                    await new Promise(resolve => setTimeout(resolve, pauseTime));
+                    console.log('[Summary] Pause completed, starting to listen');
+                    
+                    // Listen for response after speech completes
+                    try {
+                        console.log('[Summary] Listening for confirmation (yes/no)...');
+                        const response = await Voice.listen();
+                        console.log(`[Summary] Response: "${response}"`);
+                        const lowerResponse = response.toLowerCase();
+                        
+                        if (lowerResponse.includes('yes') || response.includes('हाँ') || response.includes('हां') || 
+                            lowerResponse.includes('submit') || response.includes('सबमिट')) {
+                            console.log('[Summary] Confirmed - submitting form');
+                            
+                            // Show success message on page
+                            document.getElementById('summary-container').style.display = 'none';
+                            const successContainer = document.createElement('div');
+                            successContainer.style.cssText = 'text-align: center; padding: 40px; font-size: 24px; color: green;';
+                            successContainer.id = 'success-container';
+                            
+                            let thankYouText = 'Thank you for your patience. Your form has been submitted successfully!';
+                            if (language === 'Hindi') {
+                                thankYouText = 'आपके धैर्य के लिए धन्यवाद। आपका फॉर्म सफलतापूर्वक सबमिट हो गया!';
+                            }
+                            
+                            successContainer.innerHTML = `<h2>${thankYouText}</h2><p style="font-size: 14px; margin-top: 20px; color: #666;">फॉर्म सबमिशन पूर्ण / Form submission complete</p>`;
+                            document.getElementById('question-container').parentElement.appendChild(successContainer);
+                            
+                            // Speak thank you message
+                            const thankYouSpeech = language === 'Hindi' 
+                                ? 'आपके धैर्य के लिए धन्यवाद। आपका फॉर्म सफलतापूर्वक सबमिट हो गया। होम पेज पर वापस जाने के लिए किसी भी कुंजी को दबाएं या अगले फॉर्म के लिए "अगला" कहें।'
+                                : 'Thank you for your patience. Your form has been submitted successfully. Press any key to return home or say next to start another form.';
+                            
+                            console.log('[Summary] Speaking thank you message');
+                            await Voice.speak(thankYouSpeech);
+                            
+                            // Wait for user confirmation (click/key or voice command)
+                            let userConfirmed = false;
+                            
+                            // Option 1: Click or keypress to go back
+                            const clickHandler = () => {
+                                if (!userConfirmed) {
+                                    userConfirmed = true;
+                                    console.log('[Success] User confirmed via click/keypress - returning to home');
+                                    handleReturnHome();
+                                }
+                            };
+                            
+                            document.addEventListener('click', clickHandler, { once: true });
+                            document.addEventListener('keypress', clickHandler, { once: true });
+                            
+                            // Option 2: Wait for voice confirmation
+                            setTimeout(async () => {
+                                if (!userConfirmed) {
+                                    try {
+                                        console.log('[Success] Listening for voice confirmation...');
+                                        const voiceResponse = await Voice.listen();
+                                        console.log('[Success] Voice response:', voiceResponse);
+                                        const voiceLower = voiceResponse.toLowerCase();
+                                        
+                                        if (voiceLower.includes('next') || voiceResponse.includes('अगला') || voiceLower.includes('another')) {
+                                            userConfirmed = true;
+                                            console.log('[Success] User wants another form');
+                                            // Clear the page and restart voice navigation
+                                            sessionStorage.clear();
+                                            window.location.href = 'form-selection.html';
+                                        } else {
+                                            userConfirmed = true;
+                                            console.log('[Success] Returning to home');
+                                            handleReturnHome();
+                                        }
+                                    } catch (voiceError) {
+                                        console.log('[Success] Voice listen timeout or error - returning to home');
+                                        if (!userConfirmed) {
+                                            userConfirmed = true;
+                                            handleReturnHome();
+                                        }
+                                    }
+                                }
+                            }, 3000); // Wait 3 seconds for voice command
+                            
+                            function handleReturnHome() {
+                                console.log('[Success] Clearing session and returning to home');
+                                sessionStorage.clear();
+                                window.location.href = 'welcome.html';
+                            }
+                        } else if (lowerResponse.includes('no') || response.includes('नहीं') || lowerResponse.includes('edit')) {
+                            console.log('[Summary] Not confirmed - returning to form editing');
+                            currentFieldIndex = 0;
+                            document.getElementById('summary-container').style.display = 'none';
+                            document.getElementById('question-container').style.display = 'block';
+                            loadQuestion();
+                        } else {
+                            console.log('[Summary] Unclear response - asking again');
+                            const unclearText = language === 'Hindi'
+                                ? 'कृपया स्पष्ट रूप से हाँ या नहीं कहें।'
+                                : 'Please say yes or no clearly.';
+                            await Voice.speak(unclearText);
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            showSummary();
+                        }
+                    } catch (error) {
+                        console.error('[Summary] Confirmation error:', error);
+                        const errorText = language === 'Hindi'
+                            ? 'एक त्रुटि थी। फॉर्म सबमिट किया जा रहा है।'
+                            : 'There was an error. Submitting form.';
+                        await Voice.speak(errorText);
+                        setTimeout(() => {
+                            sessionStorage.clear();
+                            window.location.href = 'welcome.html';
+                        }, 1500);
+                    }
+                })();
+            }
+        }
+
+        document.getElementById('next-btn').addEventListener('click', function() {
+            const answer = document.getElementById('answer-input').value.trim();
+            
+            if (!answer) {
+                alert('Please enter an answer before proceeding.');
+                return;
+            }
+            
+            const field = fields[currentFieldIndex];
+            answers[field] = answer;
+            State.setFormAnswers(answers);
+            currentFieldIndex++;
+            loadQuestion();
+        });
+
+        // Voice input handler
+        if (accessibilityMode === 'voice') {
+            setupVoiceAnswerInput();
+        }
+
+        function setupVoiceAnswerInput() {
+            // Auto-ask for voice input after question is displayed
+            window.loadQuestion = async function() {
+                if (currentFieldIndex >= fields.length) {
+                    showSummary();
+                    return;
+                }
+
+                const field = fields[currentFieldIndex];
+                const question = await API.askQuestion(field, language);
+                
+                document.getElementById('question-label').textContent = question;
+                document.getElementById('answer-input').value = answers[field] || '';
+                
+                // Announce question
+                console.log(`[Voice Flow] Announcing question for field: ${field}`);
+                await Voice.speak(question);
+                // Pause before listening - give user time to prepare
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // After speech completes, listen for answer
+                try {
+                    console.log('[Voice Flow] Listening for user answer...');
+                    const transcript = await Voice.listen();
+                    console.log(`[Voice Flow] Received transcript: "${transcript}"`);
+                    document.getElementById('answer-input').value = transcript;
+                    
+                    // Confirm the answer
+                    const confirmENText = 'You said: ' + transcript + '. Is this correct? Say yes to continue or no to repeat.';
+                    const confirmHIText = 'आपने कहा: ' + transcript + '. क्या यह सही है? जारी रखने के लिए हाँ कहें या दोहराने के लिए नहीं कहें।';
+                    const confirmText = language === 'Hindi' ? confirmHIText : confirmENText;
+                    
+                    console.log('[Voice Flow] Speaking confirmation prompt...');
+                    await Voice.speak(confirmText);
+                    // Pause before listening for confirmation
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    
+                    // Listen for confirmation after speech completes
+                    console.log('[Voice Flow] Listening for confirmation (yes/no)...');
+                    const confirmation = await Voice.listen();
+                    const confirmLower = confirmation.toLowerCase();
+                    console.log(`[Voice Flow] Confirmation response: "${confirmation}"`);
+                    
+                    if (confirmLower.includes('yes') || confirmLower.includes('correct') || 
+                        confirmation.includes('हाँ') || confirmation.includes('हां') || confirmation.includes('सही')) {
+                        console.log('[Voice Flow] Confirmed - moving to next question');
+                        answers[field] = transcript;
+                        State.setFormAnswers(answers);
+                        currentFieldIndex++;
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        window.loadQuestion();
+                    } else if (confirmLower.includes('no') || confirmation.includes('नहीं') || confirmLower.includes('repeat')) {
+                        // User said no, ask again
+                        console.log('[Voice Flow] Not confirmed - asking user to repeat');
+                        const repeatText = language === 'Hindi'
+                            ? 'कृपया अपना उत्तर दोहराएं।'
+                            : 'Please repeat your answer.';
+                        await Voice.speak(repeatText);
+                        // Pause before next question
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        window.loadQuestion();
+                    } else {
+                        console.log('[Voice Flow] Unclear response - asking again');
+                        const unclearText = language === 'Hindi'
+                            ? 'कृपया स्पष्ट रूप से हाँ या नहीं कहें।'
+                            : 'Please say yes or no clearly.';
+                        await Voice.speak(unclearText);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        window.loadQuestion();
+                    }
+                } catch (error) {
+                    console.error('[Voice Flow] Error occurred:', error);
+                    const errorText = language === 'Hindi'
+                        ? 'एक त्रुटि थी। कृपया फिर से कोशिश करें।'
+                        : 'There was an error. Please try again.';
+                    await Voice.speak(errorText);
+                    // Pause before retrying
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    window.loadQuestion();
+                }
+            };
+        }
+
+        document.getElementById('voice-btn').addEventListener('click', async function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = '🎤 Listening...';
+            
+            try {
+                const transcript = await Voice.listen();
+                document.getElementById('answer-input').value = transcript;
+                btn.textContent = '🎤 ✓';
+                setTimeout(() => {
+                    btn.textContent = '🎤';
+                    btn.disabled = false;
+                }, 2000);
+            } catch (error) {
+                console.error('Voice input error:', error);
+                btn.textContent = '🎤 ✗';
+                setTimeout(() => {
+                    btn.textContent = '🎤';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        });
+
+        document.getElementById('answer-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('next-btn').click();
+            }
+        });
+
+        document.getElementById('submit-btn').addEventListener('click', function() {
+            alert('Form submitted successfully!');
+            sessionStorage.clear();
+            window.location.href = 'welcome.html';
+        });
+
+        loadQuestion();
+    </script>
+</body>
+</html>
